@@ -1,1 +1,462 @@
-<h1>Draco Goods</h1>
+<!DOCTYPE html>
+
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DRACO GOODS</title>
+<style>
+body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;}
+.loader{text-align:center;color:#c9a84c;}
+.spinner{width:40px;height:40px;border:3px solid #3a0000;border-top-color:#c9a84c;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div class="loader">
+  <div class="spinner"></div>
+  <p>Loading DRACO GOODS...</p>
+</div>
+<script>
+const KEY = "46874f8e3bmsh03e6ab93eaf0defp1e4d77jsn7e7f1ce9f019";
+const HOST = "the-sneaker-database.p.rapidapi.com";
+
+function getPrice(brand) {
+const b = (brand||’’).toLowerCase();
+if (b.includes(‘nike’)||b.includes(‘jordan’)||b.includes(‘adidas’)||b.includes(‘new balance’)||b.includes(‘puma’)||b.includes(‘reebok’)||b.includes(‘converse’)||b.includes(‘vans’)) return 100;
+return 200;
+}
+
+function getSizes(gender) {
+return (gender||’’).toLowerCase().includes(‘women’) ? [‘36’,‘37’,‘38’,‘39’,‘40’,‘41’,‘42’] : [‘38’,‘39’,‘40’,‘41’,‘42’,‘43’,‘44’,‘45’];
+}
+
+let cart=[], currentProd=null, currentSz=null, currentPage=0, currentBrand=’’, currentSearch=’’;
+const EMAILJS_SVC=“service_xa2wnh9”, EMAILJS_TPL=“template_d0s0ovj”, EMAILJS_KEY=“p7HmFA3H_D2XOu3qE”;
+const STRIPE=“https://buy.stripe.com/14A4gs1W16oS0GM52zeZ200”;
+
+async function fetchSneakers(q, brand, page=0) {
+try {
+let url = `https://${HOST}/sneakers?limit=24&page=${page}`;
+if (q) url += `&name=${encodeURIComponent(q)}`;
+else if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+const r = await fetch(url, {headers:{‘x-rapidapi-host’:HOST,‘x-rapidapi-key’:KEY}});
+const d = await r.json();
+return d.results||d.sneakers||d||[];
+} catch(e) { return []; }
+}
+
+function renderGrid(products, append=false) {
+const g = document.getElementById(‘grid’);
+if (!append) g.innerHTML = ‘’;
+if (!products.length && !append) {
+g.innerHTML = ‘<div style="grid-column:1/-1;text-align:center;padding:80px;color:#555"><p style="font-size:40px">🔍</p><p>No products found</p></div>’;
+return;
+}
+products.forEach(p => {
+const brand=p.brand||’’, name=p.name||p.shoe||’’, colorway=p.colorway||’’;
+const img=p.thumbnail||p.image||p.media?.imageUrl||’’;
+const price=getPrice(brand), sizes=getSizes(p.gender);
+const id=p.id||Math.random().toString(36).substr(2,9);
+const d=document.createElement(‘div’);
+d.className=‘card’;
+const pdata=encodeURIComponent(JSON.stringify({id,name,brand,colorway,img,price,sizes}));
+d.innerHTML=` <div class="card-img" onclick="openProd('${pdata}')"> ${img?`<img src="${img}" alt="${name}" loading="lazy" onerror="this.style.display='none'"/>`:'<div style="font-size:40px;color:#ddd">👟</div>'} <div class="overlay"><span class="view-lbl">👁 View</span></div> <div class="pbadge">€${price}</div> </div> <div class="card-body"> <div class="cbrand">${brand}</div> <div class="cname">${name}</div> ${colorway?`<div class="ccolor">${colorway}</div>`:''} <div class="cprice">€${price}</div> </div> <div class="cactions"> <button class="cbuy" onclick="openProd('${pdata}')">🔒 Buy</button> <button class="cadd" onclick="qAdd(${JSON.stringify({id,name,brand,img,price,sizes})})">🛍</button> </div>`;
+g.appendChild(d);
+});
+document.getElementById(‘cnt’).textContent = document.querySelectorAll(’.card’).length + ’ Products’;
+document.getElementById(‘loadMoreWrap’).style.display = products.length===24?‘block’:‘none’;
+}
+
+async function init() {
+document.body.innerHTML = getHTML();
+emailjsInit();
+const prods = await fetchSneakers(’’,’’,0);
+renderGrid(prods);
+}
+
+function emailjsInit() {
+const s=document.createElement(‘script’);
+s.src=‘https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js’;
+s.onload=()=>emailjs.init(EMAILJS_KEY);
+document.head.appendChild(s);
+}
+
+function doSearch() {
+const q=document.getElementById(‘hs’).value.trim()||document.getElementById(‘ns’).value.trim();
+if(!q)return;
+currentSearch=q; currentBrand=’’; currentPage=0;
+document.getElementById(‘shopTitle’).textContent=`Results for "${q}"`;
+document.querySelectorAll(’.hcat’).forEach(c=>c.classList.remove(‘on’));
+scrollToShop();
+setLoad(true);
+fetchSneakers(q,’’,0).then(r=>{renderGrid(r);setLoad(false);});
+}
+
+function loadBrand(brand, el) {
+currentBrand=brand; currentSearch=’’; currentPage=0;
+document.getElementById(‘hs’).value=’’;
+if(document.getElementById(‘ns’))document.getElementById(‘ns’).value=’’;
+document.getElementById(‘shopTitle’).textContent=brand||‘All Sneakers’;
+document.querySelectorAll(’.hcat’).forEach(c=>c.classList.remove(‘on’));
+if(el)el.classList.add(‘on’);
+scrollToShop();
+setLoad(true);
+fetchSneakers(’’,brand,0).then(r=>{renderGrid(r);setLoad(false);});
+}
+
+async function loadMore() {
+currentPage++;
+const btn=document.getElementById(‘lmBtn’);
+btn.disabled=true; btn.textContent=‘Loading…’;
+const r=await fetchSneakers(currentSearch,currentBrand,currentPage);
+renderGrid(r,true);
+btn.disabled=false; btn.textContent=‘Load More’;
+}
+
+function setLoad(show) { document.getElementById(‘loader’).style.display=show?‘flex’:‘none’; }
+function scrollToShop() { document.getElementById(‘shop’).scrollIntoView({behavior:‘smooth’}); }
+
+function openProd(enc) {
+const p=JSON.parse(decodeURIComponent(enc));
+currentProd=p; currentSz=null;
+document.getElementById(‘pImg’).src=p.img||’’;
+document.getElementById(‘pBrand’).textContent=p.brand;
+document.getElementById(‘pName’).textContent=p.name;
+document.getElementById(‘pColor’).textContent=p.colorway||’’;
+document.getElementById(‘pPrice’).textContent=`€${p.price}`;
+document.getElementById(‘pBuyBtn’).textContent=`🔒 Buy Now — €${p.price}`;
+document.getElementById(‘pSizes’).innerHTML=p.sizes.map(s=>`<button class="psz" onclick="selSz('${s}',this)">${s}</button>`).join(’’);
+[‘pn’,‘pe’,‘pph’,‘pad’,‘pci’,‘ppo’,‘pco’].forEach(id=>document.getElementById(id).value=’’);
+document.getElementById(‘prodOv’).classList.add(‘open’);
+document.body.style.overflow=‘hidden’;
+}
+
+function selSz(sz,el) { currentSz=sz; document.querySelectorAll(’.psz’).forEach(b=>b.classList.remove(‘sel’)); el.classList.add(‘sel’); }
+function closeProd() { document.getElementById(‘prodOv’).classList.remove(‘open’); document.body.style.overflow=’’; }
+
+async function buyNow() {
+if(!currentProd)return;
+const sz=currentSz||currentProd.sizes[0];
+const n=document.getElementById(‘pn’).value.trim(),e=document.getElementById(‘pe’).value.trim(),
+ph=document.getElementById(‘pph’).value.trim(),a=document.getElementById(‘pad’).value.trim(),
+ci=document.getElementById(‘pci’).value.trim(),po=document.getElementById(‘ppo’).value.trim(),
+co=document.getElementById(‘pco’).value.trim();
+if(!n||!e||!ph||!a||!ci||!po||!co){toast(‘Please fill all fields ⚠️’);return;}
+const btn=document.getElementById(‘pBuyBtn’);
+btn.disabled=true; btn.textContent=‘Processing…’;
+try {
+await emailjs.send(EMAILJS_SVC,EMAILJS_TPL,{name:“🛍 DRACO GOODS — Order”,email:e,
+message:`ORDER\n${'='.repeat(30)}\n👤 ${n} | ${e} | ${ph}\n📦 ${a}, ${ci} ${po}, ${co}\n\n• ${currentProd.brand} - ${currentProd.name} | Size: ${sz} | €${currentProd.price}\n💰 TOTAL: €${currentProd.price}\n📅 ${new Date().toLocaleString()}`});
+} catch(e){console.warn(e);}
+closeProd(); window.open(STRIPE,’_blank’);
+}
+
+function addFromProd() {
+if(!currentProd)return;
+const sz=currentSz||currentProd.sizes[0];
+const ex=cart.find(c=>c.id===currentProd.id&&c.sz===sz);
+if(ex)ex.qty++;else cart.push({…currentProd,sz,qty:1});
+updateCart(); toast(currentProd.name.substring(0,25)+’ added!’); closeProd();
+}
+
+function qAdd(p) {
+const ex=cart.find(c=>c.id===p.id&&c.sz===p.sizes[0]);
+if(ex)ex.qty++;else cart.push({…p,sz:p.sizes[0],qty:1});
+updateCart(); toast(p.name.substring(0,25)+’ added!’);
+}
+
+function removeCart(id,sz) { cart=cart.filter(c=>!(c.id===id&&c.sz===sz)); updateCart(); }
+
+function updateCart() {
+document.getElementById(‘cc’).textContent=cart.reduce((a,c)=>a+c.qty,0);
+document.getElementById(‘cTotal’).textContent=`€${cart.reduce((a,c)=>a+c.price*c.qty,0)}`;
+const cb=document.getElementById(‘cartBody’);
+if(!cart.length){cb.innerHTML=’<div style="text-align:center;padding:60px;color:#444">🛍<p>Cart is empty</p></div>’;return;}
+cb.innerHTML=cart.map(c=>`<div class="ci"><div class="ci-img">${c.img?`<img src="${c.img}" alt="${c.name}"/>`:'👟'}</div><div class="ci-info"><div class="ci-brand">${c.brand}</div><div class="ci-name">${c.name}</div><div class="ci-sz">Size: ${c.sz} · Qty: ${c.qty}</div><div class="ci-price">€${c.price*c.qty}</div></div><button class="ci-rm" onclick="removeCart('${c.id}','${c.sz}')">✕</button></div>`).join(’’);
+}
+
+function toggleCart() { document.getElementById(‘cartOv’).classList.toggle(‘open’); document.getElementById(‘cartPanel’).classList.toggle(‘open’); updateCart(); }
+
+function cartCheckout() {
+if(!cart.length){toast(‘Cart is empty’);return;}
+document.getElementById(‘cartOv’).classList.remove(‘open’); document.getElementById(‘cartPanel’).classList.remove(‘open’);
+const total=cart.reduce((a,c)=>a+c.price*c.qty,0);
+const rows=cart.map(c=>`<div class="or"><span>${c.name.substring(0,26)} ×${c.qty} (${c.sz})</span><span>€${c.price*c.qty}</span></div>`).join(’’);
+document.getElementById(‘chkBd’).innerHTML=` <div class="os"><div class="os-t">Order Summary</div>${rows}<div class="or tot"><span>Total</span><span>€${total}</span></div></div> <input class="fi" id="cn" placeholder="Full Name *"/> <input class="fi" id="ce" placeholder="Email *" type="email"/> <input class="fi" id="cp" placeholder="Phone *" type="tel"/> <input class="fi" id="ca" placeholder="Street Address *"/> <div class="fr"><input class="fi" id="cc2" placeholder="City *"/><input class="fi" id="cz" placeholder="Postal Code *"/></div> <input class="fi" id="cco" placeholder="Country *"/> <button class="chk-btn" onclick="submitCart()">🔒 Pay — €${total}</button> <div style="text-align:center;font-size:10px;color:#444;margin-top:8px">🔒 Stripe · Apple Pay · Visa · Mastercard</div>`;
+document.getElementById(‘chkBg’).classList.add(‘open’);
+}
+
+async function submitCart() {
+const n=document.getElementById(‘cn’)?.value.trim(),e=document.getElementById(‘ce’)?.value.trim(),
+p=document.getElementById(‘cp’)?.value.trim(),a=document.getElementById(‘ca’)?.value.trim(),
+ci=document.getElementById(‘cc2’)?.value.trim(),z=document.getElementById(‘cz’)?.value.trim(),
+co=document.getElementById(‘cco’)?.value.trim();
+if(!n||!e||!p||!a||!ci||!z||!co){toast(‘Fill all fields ⚠️’);return;}
+const total=cart.reduce((a,c)=>a+c.price*c.qty,0);
+const items=cart.map(c=>`• ${c.brand} - ${c.name} | Size: ${c.sz} | Qty: ${c.qty} | €${c.price*c.qty}`).join(’\n’);
+try{await emailjs.send(EMAILJS_SVC,EMAILJS_TPL,{name:“🛍 DRACO — Order”,email:e,message:`ORDER\n${'='.repeat(30)}\n👤 ${n}|${e}|${p}\n📦 ${a},${ci} ${z},${co}\n\n${items}\n💰 €${total}\n📅 ${new Date().toLocaleString()}`});}catch(e){console.warn(e);}
+cart=[]; updateCart(); document.getElementById(‘chkBg’).classList.remove(‘open’);
+window.open(STRIPE,’_blank’);
+}
+
+function toast(msg) { const t=document.getElementById(‘toast’); t.textContent=msg; t.classList.add(‘show’); setTimeout(()=>t.classList.remove(‘show’),2800); }
+
+function getHTML() {
+return `<style>
+:root{–black:#0a0a0a;–gold:#c9a84c;–gold-light:#e8d5a3;–red:#8b0000;–white:#f5f4f0;–mid:#888;}
+*{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;}
+body{background:var(–black);color:var(–white);font-family:‘Barlow’,sans-serif;}
+@import url(‘https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;700&display=swap’);
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(5,5,5,0.97);backdrop-filter:blur(16px);border-bottom:1px solid #1a0000;padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:60px;gap:12px;}
+.nav-logo{font-family:‘Playfair Display’,serif;font-size:20px;font-weight:700;color:var(–gold);cursor:pointer;letter-spacing:0.1em;flex-shrink:0;}
+.nav-s{flex:1;max-width:360px;display:flex;border:1px solid #3a0000;overflow:hidden;}
+.nav-s input{flex:1;background:#110000;border:none;padding:8px 12px;color:var(–white);font-size:13px;outline:none;}
+.nav-s input::placeholder{color:#444;}
+.nav-s button{background:var(–gold);border:none;padding:0 12px;font-size:14px;cursor:pointer;color:#000;}
+.cart-btn{background:var(–gold);color:#000;border:none;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;position:relative;flex-shrink:0;}
+.cart-count{position:absolute;top:-6px;right:-6px;background:#fff;color:#000;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+.hero{height:85vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;padding-top:60px;}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse at center,#1a0000 0%,#0d0000 35%,#000 70%);}
+.hero-c{position:relative;z-index:2;text-align:center;padding:0 20px;}
+.hero-title{font-family:‘Playfair Display’,serif;font-size:clamp(36px,8vw,72px);font-weight:700;color:var(–gold);margin-bottom:8px;letter-spacing:0.05em;}
+.hero-sub{font-family:‘Barlow Condensed’,sans-serif;font-size:11px;letter-spacing:0.4em;color:#666;text-transform:uppercase;margin-bottom:28px;}
+.hero-s{display:flex;max-width:480px;margin:0 auto 20px;border:1px solid #3a0000;overflow:hidden;}
+.hero-s input{flex:1;background:#110000;border:none;padding:13px 16px;color:var(–white);font-size:14px;outline:none;}
+.hero-s input::placeholder{color:#444;}
+.hero-s button{background:var(–gold);border:none;padding:0 20px;font-size:12px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;color:#000;white-space:nowrap;}
+.hero-cats{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+.hcat{background:transparent;border:1px solid #3a0000;color:#888;padding:6px 14px;font-size:10px;font-family:inherit;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:all 0.2s;}
+.hcat:hover,.hcat.on{border-color:var(–gold);color:var(–gold);}
+.marquee{background:linear-gradient(90deg,#1a0000,#3a0000,#1a0000);overflow:hidden;white-space:nowrap;padding:8px 0;}
+.marquee-inner{display:inline-flex;animation:scroll 30s linear infinite;}
+.marquee-inner span{font-size:10px;font-weight:700;letter-spacing:0.3em;color:var(–gold);text-transform:uppercase;padding:0 22px;}
+@keyframes scroll{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+.shop{padding:36px 16px 80px;max-width:1400px;margin:0 auto;}
+.shop-head{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1a0000;padding-bottom:12px;margin-bottom:22px;flex-wrap:wrap;gap:8px;}
+.shop-title{font-family:‘Playfair Display’,serif;font-size:22px;font-weight:700;}
+.loader-bar{display:none;align-items:center;gap:8px;font-size:11px;color:var(–gold);}
+.loader-bar.show{display:flex;}
+.spinner{width:14px;height:14px;border:2px solid #3a0000;border-top-color:var(–gold);border-radius:50%;animation:spin 0.7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px;}
+.card{background:#0d0000;cursor:pointer;transition:transform 0.25s;border:1px solid transparent;}
+.card:hover{transform:translateY(-3px);box-shadow:0 12px 35px rgba(139,0,0,0.3);border-color:#3a0000;}
+.card-img{width:100%;aspect-ratio:1/1;background:#fff;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;}
+.card-img img{width:90%;height:90%;object-fit:contain;transition:transform 0.4s;}
+.card:hover .card-img img{transform:scale(1.07);}
+.overlay{position:absolute;inset:0;background:rgba(0,0,0,0);display:flex;align-items:center;justify-content:center;transition:background 0.3s;}
+.card:hover .overlay{background:rgba(0,0,0,0.2);}
+.view-lbl{color:#fff;font-size:10px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;opacity:0;transition:opacity 0.3s;background:rgba(201,168,76,0.92);padding:6px 12px;}
+.card:hover .view-lbl{opacity:1;}
+.pbadge{position:absolute;top:8px;right:8px;background:var(–gold);color:#000;font-size:11px;font-weight:800;padding:3px 7px;z-index:2;}
+.card-body{padding:10px 11px 6px;background:#0d0000;}
+.cbrand{font-size:9px;letter-spacing:0.2em;color:var(–gold);text-transform:uppercase;margin-bottom:2px;}
+.cname{font-size:11px;color:var(–white);font-weight:500;line-height:1.3;margin-bottom:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.ccolor{font-size:10px;color:var(–mid);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cprice{font-size:14px;font-weight:700;}
+.cactions{padding:0 11px 11px;display:flex;gap:5px;background:#0d0000;}
+.cbuy{flex:1;background:var(–gold);border:none;color:#000;padding:8px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;}
+.cbuy:hover{background:var(–gold-light);}
+.cadd{background:transparent;border:1px solid #2a0000;color:#777;padding:8px 10px;cursor:pointer;font-size:12px;transition:all 0.2s;}
+.cadd:hover{border-color:var(–gold);color:var(–gold);}
+.load-more-wrap{text-align:center;margin-top:36px;}
+#lmBtn{background:transparent;border:1px solid #3a0000;color:var(–gold);padding:11px 32px;font-family:inherit;font-size:12px;font-weight:600;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;}
+#lmBtn:hover{background:var(–gold);color:#000;border-color:var(–gold);}
+#lmBtn:disabled{opacity:0.4;cursor:not-allowed;}
+.prod-ov{position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:2000;opacity:0;pointer-events:none;transition:opacity 0.3s;display:flex;align-items:center;justify-content:center;padding:10px;}
+.prod-ov.open{opacity:1;pointer-events:all;}
+.prod-modal{background:#080000;border:1px solid #3a0000;width:100%;max-width:820px;max-height:92vh;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;}
+.pimg-side{background:#fff;display:flex;align-items:center;justify-content:center;position:relative;min-height:320px;}
+.pimg-side img{width:100%;height:100%;object-fit:contain;padding:20px;}
+.pclose{position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.6);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.pclose:hover{background:#8b0000;}
+.pinfo{padding:22px 20px;display:flex;flex-direction:column;overflow-y:auto;}
+#pBrand{font-size:10px;letter-spacing:0.22em;color:var(–gold);text-transform:uppercase;margin-bottom:4px;}
+#pName{font-family:‘Playfair Display’,serif;font-size:18px;font-weight:700;margin-bottom:5px;line-height:1.3;}
+#pColor{font-size:11px;color:var(–mid);margin-bottom:12px;}
+#pPrice{font-size:24px;font-weight:700;margin-bottom:14px;color:var(–gold);}
+.size-l{font-size:10px;letter-spacing:0.18em;color:var(–gold);text-transform:uppercase;margin-bottom:7px;}
+.prod-sizes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
+.psz{background:transparent;border:1px solid #3a0000;color:#888;padding:6px 10px;font-size:11px;font-family:inherit;cursor:pointer;min-width:40px;text-align:center;transition:all 0.15s;}
+.psz:hover{border-color:var(–gold);color:var(–gold);}
+.psz.sel{background:var(–gold);border-color:var(–gold);color:#000;font-weight:700;}
+.pdiv{border:none;border-top:1px solid #2a0000;margin:14px 0;}
+.addr-l{font-size:10px;letter-spacing:0.2em;color:var(–gold);text-transform:uppercase;margin-bottom:10px;}
+.pfi{width:100%;background:#0d0000;border:1px solid #2a0000;color:var(–white);padding:9px 11px;font-family:inherit;font-size:12px;outline:none;margin-bottom:7px;}
+.pfi:focus{border-color:var(–gold);}
+.pfr{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+#pBuyBtn{width:100%;background:var(–gold);border:none;color:#000;padding:13px;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;margin-top:6px;}
+#pBuyBtn:hover{background:var(–gold-light);}
+#pBuyBtn:disabled{background:#333;color:#666;cursor:not-allowed;}
+.p-add-cart{width:100%;background:transparent;border:1px solid #3a0000;color:var(–white);padding:10px;font-family:inherit;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;margin-top:7px;}
+.p-add-cart:hover{border-color:var(–gold);color:var(–gold);}
+.cart-ov{position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:3000;opacity:0;pointer-events:none;transition:opacity 0.3s;}
+.cart-ov.open{opacity:1;pointer-events:all;}
+.cart-panel{position:fixed;top:0;right:-440px;width:440px;max-width:100vw;height:100vh;background:#080000;border-left:1px solid #2a0000;z-index:3001;transition:right 0.35s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;}
+.cart-panel.open{right:0;}
+.cart-hd{padding:16px 20px;border-bottom:1px solid #2a0000;display:flex;align-items:center;justify-content:space-between;}
+.cart-hd-t{font-family:‘Playfair Display’,serif;font-size:17px;font-weight:700;}
+.cart-x{background:none;border:none;color:#555;font-size:20px;cursor:pointer;}
+.cart-body{flex:1;overflow-y:auto;padding:12px;}
+.ci{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid #1a0000;}
+.ci-img{width:58px;height:58px;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.ci-img img{width:90%;height:90%;object-fit:contain;}
+.ci-info{flex:1;}
+.ci-brand{font-size:9px;color:var(–gold);letter-spacing:0.15em;text-transform:uppercase;}
+.ci-name{font-size:11px;margin:2px 0;}
+.ci-sz{font-size:10px;color:var(–mid);}
+.ci-price{font-size:13px;font-weight:700;margin-top:2px;}
+.ci-rm{background:none;border:none;color:#444;cursor:pointer;font-size:14px;align-self:flex-start;margin-left:auto;}
+.ci-rm:hover{color:#e55;}
+.cart-ft{padding:14px 20px;border-top:1px solid #2a0000;}
+.cart-tr{display:flex;justify-content:space-between;margin-bottom:8px;}
+.cart-tl{font-size:12px;color:var(–mid);}
+.cart-ta{font-size:18px;font-weight:700;}
+.cart-note{font-size:11px;color:#555;margin-bottom:11px;line-height:1.5;}
+.co-btn{width:100%;background:var(–gold);border:none;color:#000;padding:13px;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;margin-bottom:7px;}
+.co-btn:hover{background:var(–gold-light);}
+.pi{background:#110000;border:1px solid #2a0000;color:#555;font-size:9px;padding:3px 7px;}
+.pay-icons{display:flex;gap:5px;justify-content:center;margin-top:7px;}
+.chk-bg{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:4000;display:none;align-items:center;justify-content:center;padding:14px;}
+.chk-bg.open{display:flex;}
+.chk-box{background:#080000;border:1px solid #2a0000;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;}
+.chk-hd{padding:15px 18px;border-bottom:1px solid #2a0000;display:flex;justify-content:space-between;align-items:center;}
+.chk-t{font-family:‘Playfair Display’,serif;font-size:17px;font-weight:700;}
+.chk-x{background:none;border:none;color:#555;font-size:20px;cursor:pointer;}
+.chk-bd{padding:18px;}
+.fi{width:100%;background:#0d0000;border:1px solid #2a0000;color:var(–white);padding:9px 11px;font-family:inherit;font-size:12px;outline:none;margin-bottom:8px;}
+.fi:focus{border-color:var(–gold);}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.os{background:#0d0000;padding:11px;margin-bottom:13px;border:1px solid #2a0000;}
+.os-t{font-size:10px;letter-spacing:0.2em;color:var(–gold);text-transform:uppercase;margin-bottom:7px;}
+.or{display:flex;justify-content:space-between;font-size:12px;color:var(–mid);margin-bottom:4px;}
+.or.tot{color:var(–white);font-weight:700;font-size:13px;border-top:1px solid #2a0000;padding-top:7px;margin-top:5px;}
+.chk-btn{width:100%;background:var(–gold);border:none;color:#000;padding:13px;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;}
+.chk-btn:hover{background:var(–gold-light);}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(–gold);color:#000;padding:9px 20px;font-size:12px;font-weight:700;letter-spacing:0.1em;opacity:0;pointer-events:none;transition:all 0.28s;z-index:9999;white-space:nowrap;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+footer{background:#030000;border-top:1px solid #1a0000;padding:40px 24px 20px;margin-top:60px;}
+.ft-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:32px;margin-bottom:32px;}
+.ft-title{font-family:‘Playfair Display’,serif;font-size:20px;font-weight:700;color:var(–gold);margin-bottom:10px;}
+.ft-desc{color:#444;font-size:12px;line-height:1.75;}
+.ft-h{font-size:10px;letter-spacing:0.25em;color:var(–gold);text-transform:uppercase;margin-bottom:12px;}
+.ft-ul{list-style:none;}
+.ft-ul li{margin-bottom:8px;}
+.ft-ul a{color:#444;text-decoration:none;font-size:12px;cursor:pointer;}
+.ft-ul a:hover{color:var(–white);}
+.ft-bot{border-top:1px solid #1a0000;padding-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+.ft-copy{color:#2a2a2a;font-size:11px;}
+.ft-pays{display:flex;gap:5px;}
+@media(max-width:650px){
+.nav-s{display:none;}nav{padding:0 12px;}
+.grid{grid-template-columns:repeat(2,1fr);}
+.ft-grid{grid-template-columns:1fr;}
+.cart-panel{width:100vw;}
+.fr,.pfr{grid-template-columns:1fr;}
+.prod-modal{grid-template-columns:1fr;}
+.pimg-side{min-height:260px;max-height:300px;}
+.pinfo{padding:16px;}
+}
+</style>
+
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;700&display=swap" rel="stylesheet"/>
+<nav>
+  <div class="nav-logo" onclick="scrollToShop()">DRACO GOODS</div>
+  <div class="nav-s">
+    <input id="ns" placeholder="Search sneakers, brand…" onkeydown="if(event.key==='Enter')doSearch()"/>
+    <button onclick="doSearch()">🔍</button>
+  </div>
+  <button class="cart-btn" onclick="toggleCart()">🛍 Cart <span class="cart-count" id="cc">0</span></button>
+</nav>
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-c">
+    <div class="hero-title">DRACO GOODS</div>
+    <p class="hero-sub">Nike · Jordan · Adidas · Balenciaga · Off-White · New Balance</p>
+    <div class="hero-s">
+      <input id="hs" placeholder="Search any sneaker, brand or model…" onkeydown="if(event.key==='Enter')doSearch()"/>
+      <button onclick="doSearch()">🔍 Search</button>
+    </div>
+    <div class="hero-cats">
+      <button class="hcat on" onclick="loadBrand('',this)">All</button>
+      <button class="hcat" onclick="loadBrand('Nike',this)">Nike</button>
+      <button class="hcat" onclick="loadBrand('Jordan',this)">Jordan</button>
+      <button class="hcat" onclick="loadBrand('Adidas',this)">Adidas</button>
+      <button class="hcat" onclick="loadBrand('Balenciaga',this)">Balenciaga</button>
+      <button class="hcat" onclick="loadBrand('Off-White',this)">Off-White</button>
+      <button class="hcat" onclick="loadBrand('New Balance',this)">New Balance</button>
+    </div>
+  </div>
+</section>
+<div class="marquee"><div class="marquee-inner">
+  <span>Nike</span><span>✦</span><span>Jordan</span><span>✦</span><span>Adidas</span><span>✦</span><span>Balenciaga</span><span>✦</span><span>Off-White</span><span>✦</span><span>New Balance</span><span>✦</span><span>🍎 Apple Pay</span><span>✦</span><span>💳 Stripe Secure</span><span>✦</span>
+  <span>Nike</span><span>✦</span><span>Jordan</span><span>✦</span><span>Adidas</span><span>✦</span><span>Balenciaga</span><span>✦</span><span>Off-White</span><span>✦</span><span>New Balance</span><span>✦</span><span>🍎 Apple Pay</span><span>✦</span><span>💳 Stripe Secure</span><span>✦</span>
+</div></div>
+<section class="shop" id="shop">
+  <div class="shop-head">
+    <h2 class="shop-title" id="shopTitle">All Sneakers</h2>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="shop-count" id="cnt"></span>
+      <div class="loader-bar" id="loader"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="load-more-wrap" id="loadMoreWrap" style="display:none">
+    <button id="lmBtn" onclick="loadMore()">Load More</button>
+  </div>
+</section>
+<footer>
+  <div class="ft-grid">
+    <div><div class="ft-title">DRACO GOODS</div><p class="ft-desc">Premium curated streetwear. Nike, Jordan, Adidas, Balenciaga, Off-White and more. Ships worldwide.</p></div>
+    <div><div class="ft-h">Brands</div><ul class="ft-ul"><li><a onclick="loadBrand('Nike')">Nike</a></li><li><a onclick="loadBrand('Jordan')">Jordan</a></li><li><a onclick="loadBrand('Adidas')">Adidas</a></li><li><a onclick="loadBrand('Balenciaga')">Balenciaga</a></li><li><a onclick="loadBrand('Off-White')">Off-White</a></li></ul></div>
+    <div><div class="ft-h">Contact</div><ul class="ft-ul"><li><a href="mailto:boadedaniel@gmail.com">boadedaniel@gmail.com</a></li><li><a href="https://instagram.com" target="_blank">@DracoGoods</a></li><li><a>Shipping Info</a></li><li><a>Returns</a></li></ul></div>
+  </div>
+  <div class="ft-bot"><span class="ft-copy">© 2026 Draco Goods</span><div class="ft-pays"><span class="pi">VISA</span><span class="pi">MC</span><span class="pi">AMEX</span><span class="pi">APPLE PAY</span></div></div>
+</footer>
+<div class="prod-ov" id="prodOv" onclick="if(event.target===this)closeProd()">
+  <div class="prod-modal">
+    <div class="pimg-side"><button class="pclose" onclick="closeProd()">✕</button><img id="pImg" src="" alt=""/></div>
+    <div class="pinfo">
+      <div id="pBrand"></div><div id="pName"></div><div id="pColor"></div><div id="pPrice"></div>
+      <div class="size-l">Select Size</div>
+      <div class="prod-sizes" id="pSizes"></div>
+      <hr class="pdiv"/>
+      <div class="addr-l">📦 Delivery Address</div>
+      <input class="pfi" id="pn" placeholder="Full Name *"/>
+      <input class="pfi" id="pe" placeholder="Email *" type="email"/>
+      <input class="pfi" id="pph" placeholder="Phone *" type="tel"/>
+      <input class="pfi" id="pad" placeholder="Street Address *"/>
+      <div class="pfr"><input class="pfi" id="pci" placeholder="City *"/><input class="pfi" id="ppo" placeholder="Postal Code *"/></div>
+      <input class="pfi" id="pco" placeholder="Country *"/>
+      <button id="pBuyBtn" onclick="buyNow()">🔒 Buy Now</button>
+      <button class="p-add-cart" onclick="addFromProd()">🛍 Add to Cart</button>
+      <div style="text-align:center;font-size:10px;color:#444;margin-top:8px">🔒 Stripe · Apple Pay · Visa · Mastercard</div>
+    </div>
+  </div>
+</div>
+<div class="cart-ov" id="cartOv" onclick="toggleCart()"></div>
+<div class="cart-panel" id="cartPanel">
+  <div class="cart-hd"><span class="cart-hd-t">Your Cart</span><button class="cart-x" onclick="toggleCart()">✕</button></div>
+  <div class="cart-body" id="cartBody"></div>
+  <div class="cart-ft">
+    <div class="cart-tr"><span class="cart-tl">Total</span><span class="cart-ta" id="cTotal">€0</span></div>
+    <p class="cart-note">💡 Redirected to Stripe to pay securely.</p>
+    <button class="co-btn" onclick="cartCheckout()">🔒 Checkout</button>
+    <div class="pay-icons"><span class="pi">VISA</span><span class="pi">MC</span><span class="pi">AMEX</span><span class="pi">APPLE PAY</span></div>
+  </div>
+</div>
+<div class="chk-bg" id="chkBg">
+  <div class="chk-box">
+    <div class="chk-hd"><span class="chk-t">Complete Order</span><button class="chk-x" onclick="document.getElementById('chkBg').classList.remove('open')">✕</button></div>
+    <div class="chk-bd" id="chkBd"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>`;
+}
+
+init();
+</script>
+
+</body>
+</html>
